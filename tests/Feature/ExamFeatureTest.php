@@ -1,5 +1,9 @@
 <?php
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
 it('shows the exams index to guests', function () {
     $response = $this->get('/');
     $response->assertSuccessful();
@@ -32,4 +36,21 @@ it('grades a submission and shows results', function () {
     $response->assertSuccessful();
     $response->assertSee('You scored 10/10');
     $response->assertSee('100%');
+});
+
+it('counts total submissions and by topic', function () {
+    $exam = config('exams.topics.php');
+    $answers = [];
+    foreach (array_slice($exam['questions'], 0, 10) as $i => $q) {
+        $answers[$i] = $q['answer'];
+    }
+
+    $this->post('/exams/php', ['answers' => $answers])->assertSuccessful();
+    $this->post('/exams/php', ['answers' => $answers])->assertSuccessful();
+
+    $resp = $this->get('/exams/submissions/count');
+    $resp->assertSuccessful()->assertJson(['count' => 2]);
+
+    $resp2 = $this->get('/exams/submissions/count?topic=php');
+    $resp2->assertSuccessful()->assertJson(['count' => 2, 'topic' => 'php']);
 });

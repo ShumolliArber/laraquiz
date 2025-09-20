@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ExamSubmission;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -9,6 +10,21 @@ use Illuminate\Support\Arr;
 
 class ExamController extends Controller
 {
+    public function submissionsCount(Request $request)
+    {
+        $topic = $request->query('topic');
+        $query = ExamSubmission::query();
+        if ($topic) {
+            $query->where('topic', $topic);
+        }
+        $count = $query->count();
+
+        return response()->json([
+            'count' => $count,
+            'topic' => $topic,
+        ]);
+    }
+
     public function index(): View
     {
         $topics = collect(config('exams.topics', []))
@@ -58,15 +74,22 @@ class ExamController extends Controller
         $answers = $data['answers'] ?? [];
 
         $correct = 0;
-        foreach ($questions as $i => $q) {
-            $selected = Arr::get($answers, (string) $i);
-            if (is_int($selected) && isset($q['answer']) && $selected === (int) $q['answer']) {
+        foreach ($questions as $index => $question) {
+            $selected = (int) Arr::get($answers, $index);
+            if (isset($question['answer']) && $selected === (int) $question['answer']) {
                 $correct++;
             }
         }
 
         $total = count($questions);
         $percentage = $total > 0 ? round(($correct / $total) * 100) : 0;
+
+        // Persist submission count row
+        ExamSubmission::query()->create([
+            'topic' => $topic,
+            'score' => $correct,
+            'total' => $total,
+        ]);
 
         return view('exams.result', [
             'topicKey' => $topic,
