@@ -7,6 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 class ExamSubmission extends Model
 {
     protected $fillable = [
-        'topic', 'score', 'total',
+        'topic', 'visitor_id', 'score', 'total',
     ];
 }

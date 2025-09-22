@@ -35,6 +35,11 @@
                 </div>
             </form>
 
+            <div id="my-results" class="mb-6 hidden">
+                <h2 class="text-xl font-semibold mb-2">Your recent results</h2>
+                <ul id="my-results-list" class="space-y-1 text-sm"></ul>
+            </div>
+
             <h2 class="text-xl font-semibold mb-3">Available Exams</h2>
             <ul class="space-y-3">
                 @forelse ($topics as $topic)
@@ -48,6 +53,30 @@
                 @endforelse
             </ul>
         </div>
+        </div>
     </div>
+
+    <script>
+        (function(){
+            try {
+                fetch('{{ route('exams.my-submissions') }}', {credentials: 'same-origin'})
+                    .then(r => r.ok ? r.json() : Promise.reject())
+                    .then(data => {
+                        if (!data || !Array.isArray(data.submissions) || data.submissions.length === 0) {
+                            return;
+                        }
+                        const wrap = document.getElementById('my-results');
+                        const list = document.getElementById('my-results-list');
+                        data.submissions.slice(0, 5).forEach(item => {
+                            const li = document.createElement('li');
+                            li.textContent = `${item.topic}: ${item.score}/${item.total} (${item.percentage}%)`;
+                            list.appendChild(li);
+                        });
+                        wrap.classList.remove('hidden');
+                    })
+                    .catch(() => {});
+            } catch (e) {}
+        })();
+    </script>
 </body>
 </html>

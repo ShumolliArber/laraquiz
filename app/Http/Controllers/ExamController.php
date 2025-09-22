@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreTopicRequest;
 use App\Models\ExamSubmission;
 use App\Models\Topic;
-use App\Http\Requests\StoreTopicRequest;
 use App\Support\ExamRepository;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -30,6 +30,38 @@ class ExamController extends Controller
                 'name' => $t->name,
                 'questions_count' => $t->questions_count,
             ])->all(),
+        ]);
+    }
+
+    public function mySubmissions(Request $request)
+    {
+        $visitorId = $request->cookie('visitor_id');
+        if (empty($visitorId)) {
+            return response()->json([
+                'submissions' => [],
+            ]);
+        }
+
+        $items = ExamSubmission::query()
+            ->where('visitor_id', $visitorId)
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get(['topic', 'score', 'total', 'created_at'])
+            ->map(function ($s) {
+                $percentage = $s->total > 0 ? round(($s->score / $s->total) * 100) : 0;
+
+                return [
+                    'topic' => $s->topic,
+                    'score' => (int) $s->score,
+                    'total' => (int) $s->total,
+                    'percentage' => $percentage,
+                    'created_at' => $s->created_at ? $s->created_at->toISOString() : null,
+                ];
+            })
+            ->all();
+
+        return response()->json([
+            'submissions' => $items,
         ]);
     }
 
@@ -88,7 +120,7 @@ class ExamController extends Controller
         ]);
     }
 
-    public function submit(Request $request, string $topic): View|RedirectResponse
+    public function submit(Request $request, string $topic): View|RedirectResponse|\Illuminate\Http\Response
     {
         $exam = $this->exams->topic($topic);
         if ($exam === null) {
@@ -98,7 +130,9 @@ class ExamController extends Controller
         $questions = array_slice($exam['questions'] ?? [], 0, 10);
 
         // Build validation rules dynamically: answers.q{index} must be in 0..3
-        $rules = [];
+        $rules = [
+            'answers' => ['array'],
+        ];
         foreach ($questions as $i => $_) {
             $rules["answers.$i"] = ['nullable', 'integer', 'min:0', 'max:3'];
         }
@@ -117,19 +151,30 @@ class ExamController extends Controller
         $total = count($questions);
         $percentage = $total > 0 ? round(($correct / $total) * 100) : 0;
 
+        // Ensure we have a persistent anonymous visitor id
+        $visitorId = $request->cookie('visitor_id');
+        if (empty($visitorId)) {
+            $visitorId = (string) str()->uuid();
+        }
+
         // Persist submission count row
         ExamSubmission::query()->create([
             'topic' => $topic,
+            'visitor_id' => $visitorId,
             'score' => $correct,
             'total' => $total,
         ]);
 
-        return view('exams.result', [
+        // Attach cookie to response to persist for 1 year
+        $response = response()->view('exams.result', [
             'topicKey' => $topic,
             'topicName' => $exam['name'] ?? ucfirst($topic),
             'correct' => $correct,
             'total' => $total,
             'percentage' => $percentage,
         ]);
+        $response->cookie('visitor_id', $visitorId, 60 * 24 * 365, null, null, false, true, false, 'Lax');
+
+        return $response;
     }
 }
