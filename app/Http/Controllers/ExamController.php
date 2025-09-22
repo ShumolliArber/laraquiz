@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ExamSubmission;
+use App\Support\ExamRepository;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use Illuminate\Support\Arr;
 
 class ExamController extends Controller
 {
+    public function __construct(public ExamRepository $exams) {}
+
     public function submissionsCount(Request $request)
     {
         $topic = $request->query('topic');
@@ -27,25 +30,21 @@ class ExamController extends Controller
 
     public function index(): View
     {
-        $topics = collect(config('exams.topics', []))
-            ->map(fn ($t, $key) => ['key' => $key, 'name' => $t['name'] ?? ucfirst($key)])
-            ->values();
+        $topics = $this->exams->topics();
 
         return view('exams.index', [
-            'topics' => $topics,
+            'topics' => collect($topics),
         ]);
     }
 
     public function show(string $topic): View|RedirectResponse
     {
-        $topics = config('exams.topics', []);
-        if (! array_key_exists($topic, $topics)) {
+        $exam = $this->exams->topic($topic);
+        if ($exam === null) {
             return redirect()->route('exams.index');
         }
 
-        $exam = $topics[$topic];
-        $questions = $exam['questions'] ?? [];
-        $questions = array_slice($questions, 0, 10);
+        $questions = array_slice($exam['questions'] ?? [], 0, 10);
 
         return view('exams.show', [
             'topicKey' => $topic,
@@ -56,12 +55,11 @@ class ExamController extends Controller
 
     public function submit(Request $request, string $topic): View|RedirectResponse
     {
-        $topics = config('exams.topics', []);
-        if (! array_key_exists($topic, $topics)) {
+        $exam = $this->exams->topic($topic);
+        if ($exam === null) {
             return redirect()->route('exams.index');
         }
 
-        $exam = $topics[$topic];
         $questions = array_slice($exam['questions'] ?? [], 0, 10);
 
         // Build validation rules dynamically: answers.q{index} must be in 0..3

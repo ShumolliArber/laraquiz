@@ -12,8 +12,9 @@
     <div class="absolute inset-0 opacity-30 pointer-events-none" style="background-image: radial-gradient(circle at 20% 20%, rgba(255,117,15,0.12) 0, transparent 40%), radial-gradient(circle at 80% 30%, rgba(99,102,241,0.12) 0, transparent 35%), radial-gradient(circle at 30% 80%, rgba(34,197,94,0.10) 0, transparent 35%);"></div>
     <div class="relative flex items-start md:items-center justify-center p-4 md:p-8">
         <div class="w-full max-w-3xl mx-auto bg-white/80 dark:bg-[#161615]/80 backdrop-blur shadow-[0_10px_30px_rgba(0,0,0,0.08)] ring-1 ring-black/5 dark:ring-white/10 rounded-xl p-5 sm:p-8">
-            <div class="mb-4">
+            <div class="mb-4 flex items-center justify-between">
                 <a class="text-sm text-gray-700 dark:text-gray-300 underline" href="{{ route('exams.index') }}">← Back</a>
+                <a class="text-sm text-[#F53003] underline" href="{{ route('exams.manage', $topicKey) }}">Manage questions</a>
             </div>
             <h1 class="text-2xl font-semibold mb-2">{{ $topicName }} Exam</h1>
             <p class="mb-6 text-gray-700 dark:text-gray-300">Answer all questions and submit to see your score.</p>
