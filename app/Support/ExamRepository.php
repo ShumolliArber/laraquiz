@@ -149,35 +149,12 @@ class ExamRepository
      */
     protected function bootstrapTopics(): void
     {
-        $configured = config('exams.topics', []);
-        if (empty($configured)) {
-            return;
-        }
-        $existing = Topic::query()->pluck('key')->all();
-        foreach ($configured as $key => $data) {
-            if (! in_array($key, $existing, true)) {
-                Topic::query()->create([
-                    'key' => (string) $key,
-                    'name' => (string) ($data['name'] ?? ucfirst((string) $key)),
-                ]);
-            }
-        }
+        // No-op: topics are now fully managed via DB/UI.
     }
 
     protected function bootstrapQuestionsFromConfig(Topic $topic): void
     {
-        $configured = Arr::get(config('exams.topics', []), $topic->key.'.questions', []);
-        if (! is_array($configured)) {
-            return;
-        }
-        foreach (array_values($configured) as $i => $q) {
-            $this->createQuestion($topic, [
-                'title' => (string) Arr::get($q, 'title', ''),
-                'description' => (string) Arr::get($q, 'description', ''),
-                'choices' => array_values((array) Arr::get($q, 'choices', ['', '', '', ''])),
-                'answer' => (int) Arr::get($q, 'answer', 0),
-            ], $i);
-        }
+        // No-op: questions are now fully managed via DB/UI.
     }
 
     /**

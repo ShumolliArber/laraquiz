@@ -7,12 +7,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('can show manage page for a topic', function () {
+    Topic::query()->create(['key' => 'php', 'name' => 'PHP']);
     $response = $this->get('/exams/php/manage');
     $response->assertSuccessful();
     $response->assertSee('Manage PHP Questions');
 });
 
 it('can add a new question to a topic', function () {
+    Topic::query()->create(['key' => 'php', 'name' => 'PHP']);
     $payload = [
         'title' => 'New Q',
         'description' => 'Desc',

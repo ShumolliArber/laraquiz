@@ -5,6 +5,7 @@ use App\Http\Controllers\ManageQuestionsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [ExamController::class, 'index'])->name('exams.index');
+Route::post('/topics', [ExamController::class, 'storeTopic'])->name('topics.store');
 Route::get('/exams/submissions/count', [ExamController::class, 'submissionsCount'])->name('exams.submissions.count');
 Route::get('/exams/stats', [ExamController::class, 'stats'])->name('exams.stats');
 Route::get('/exams/{topic}', [ExamController::class, 'show'])->name('exams.show');

@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\ExamSubmission;
 use App\Models\Topic;
+use App\Http\Requests\StoreTopicRequest;
 use App\Support\ExamRepository;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 
 class ExamController extends Controller
 {
@@ -30,6 +32,7 @@ class ExamController extends Controller
             ])->all(),
         ]);
     }
+
     public function submissionsCount(Request $request)
     {
         $topic = $request->query('topic');
@@ -47,11 +50,26 @@ class ExamController extends Controller
 
     public function index(): View
     {
-        $topics = $this->exams->topics();
+        if (! Schema::hasTable('topics')) {
+            $topics = [];
+        } else {
+            $topics = $this->exams->topics();
+        }
 
         return view('exams.index', [
             'topics' => collect($topics),
         ]);
+    }
+
+    public function storeTopic(StoreTopicRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+        Topic::query()->create([
+            'key' => $data['key'],
+            'name' => $data['name'],
+        ]);
+
+        return redirect()->route('exams.index')->with('status', 'Topic created.');
     }
 
     public function show(string $topic): View|RedirectResponse
