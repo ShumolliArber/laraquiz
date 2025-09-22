@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ExamSubmission;
+use App\Models\Topic;
 use App\Support\ExamRepository;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -13,6 +14,22 @@ class ExamController extends Controller
 {
     public function __construct(public ExamRepository $exams) {}
 
+    public function stats()
+    {
+        $topics = Topic::query()
+            ->withCount('questions')
+            ->orderBy('name')
+            ->get(['key', 'name']);
+
+        return response()->json([
+            'topics_count' => $topics->count(),
+            'topics' => $topics->map(fn ($t) => [
+                'key' => $t->key,
+                'name' => $t->name,
+                'questions_count' => $t->questions_count,
+            ])->all(),
+        ]);
+    }
     public function submissionsCount(Request $request)
     {
         $topic = $request->query('topic');

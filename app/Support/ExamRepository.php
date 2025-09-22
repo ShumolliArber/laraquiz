@@ -2,8 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\Question;
+use App\Models\Topic;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Storage;
 
 class ExamRepository
 {
@@ -14,17 +15,14 @@ class ExamRepository
      */
     public function topics(): array
     {
-        $topics = config('exams.topics', []);
+        // Ensure topics exist in DB (bootstrap from config on first call)
+        $this->bootstrapTopics();
 
-        $list = [];
-        foreach ($topics as $key => $data) {
-            $list[] = [
-                'key' => (string) $key,
-                'name' => (string) ($data['name'] ?? ucfirst((string) $key)),
-            ];
-        }
-
-        return $list;
+        return Topic::query()
+            ->orderBy('name')
+            ->get(['key', 'name'])
+            ->map(fn (Topic $t) => ['key' => $t->key, 'name' => $t->name])
+            ->all();
     }
 
     /**
@@ -34,37 +32,50 @@ class ExamRepository
      */
     public function topic(string $key): ?array
     {
-        $topics = config('exams.topics', []);
-        if (! array_key_exists($key, $topics)) {
+        $this->bootstrapTopics();
+
+        $topic = Topic::query()->where('key', $key)->first();
+        if (! $topic) {
             return null;
         }
 
-        $base = $topics[$key];
-        $name = (string) ($base['name'] ?? ucfirst($key));
-        $questions = $this->loadOverride($key) ?? Arr::get($base, 'questions', []);
+        // If topic has no questions yet, bootstrap from config once
+        if (! $topic->questions()->exists()) {
+            $this->bootstrapQuestionsFromConfig($topic);
+        }
+
+        $questions = $topic->questions()->orderBy('position')->orderBy('id')->get();
 
         return [
-            'name' => $name,
-            'questions' => is_array($questions) ? $questions : [],
+            'name' => $topic->name,
+            'questions' => $questions->map(function (Question $q): array {
+                return [
+                    'title' => $q->title,
+                    'description' => $q->description,
+                    'choices' => $q->choices,
+                    'answer' => (int) $q->answer,
+                ];
+            })->all(),
         ];
     }
 
     /**
-     * Persist full questions array override for a topic to storage.
+     * Replace all questions for a topic using DB.
      *
      * @param  array<int, array{title:string,description:string,choices:array<int,string>,answer:int}>  $questions
      */
     public function saveQuestions(string $key, array $questions): void
     {
-        // Basic normalization: reindex numerically
-        $questions = array_values($questions);
-        $disk = Storage::disk('local');
-        $path = $this->topicPath($key);
-        $dir = dirname($path);
-        if (! $disk->exists($dir)) {
-            $disk->makeDirectory($dir);
+        $topic = Topic::query()->where('key', $key)->first();
+        if (! $topic) {
+            return;
         }
-        $disk->put($path, json_encode($questions, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+        // Delete existing and re-insert in order
+        $topic->questions()->delete();
+        foreach (array_values($questions) as $i => $q) {
+            $this->createQuestion($topic, $q, $i);
+        }
     }
 
     /**
@@ -74,13 +85,12 @@ class ExamRepository
      */
     public function addQuestion(string $key, array $question): void
     {
-        $topic = $this->topic($key);
-        if ($topic === null) {
+        $topic = Topic::query()->where('key', $key)->first();
+        if (! $topic) {
             return;
         }
-        $questions = $topic['questions'];
-        $questions[] = $question;
-        $this->saveQuestions($key, $questions);
+        $position = (int) ($topic->questions()->max('position') ?? -1) + 1;
+        $this->createQuestion($topic, $question, $position);
     }
 
     /**
@@ -90,16 +100,23 @@ class ExamRepository
      */
     public function updateQuestion(string $key, int $index, array $question): void
     {
-        $topic = $this->topic($key);
-        if ($topic === null) {
+        $topic = Topic::query()->where('key', $key)->first();
+        if (! $topic) {
             return;
         }
-        $questions = $topic['questions'];
-        if (! array_key_exists($index, $questions)) {
+        $q = $topic->questions()->orderBy('position')->orderBy('id')->skip($index)->first();
+        if (! $q) {
             return;
         }
-        $questions[$index] = $question;
-        $this->saveQuestions($key, $questions);
+        $q->update([
+            'title' => $question['title'],
+            'description' => $question['description'],
+            'choice_0' => $question['choices'][0] ?? '',
+            'choice_1' => $question['choices'][1] ?? '',
+            'choice_2' => $question['choices'][2] ?? '',
+            'choice_3' => $question['choices'][3] ?? '',
+            'answer' => (int) $question['answer'],
+        ]);
     }
 
     /**
@@ -107,38 +124,76 @@ class ExamRepository
      */
     public function deleteQuestion(string $key, int $index): void
     {
-        $topic = $this->topic($key);
-        if ($topic === null) {
+        $topic = Topic::query()->where('key', $key)->first();
+        if (! $topic) {
             return;
         }
-        $questions = $topic['questions'];
-        if (! array_key_exists($index, $questions)) {
+        $q = $topic->questions()->orderBy('position')->orderBy('id')->skip($index)->first();
+        if (! $q) {
             return;
         }
-        unset($questions[$index]);
-        $this->saveQuestions($key, array_values($questions));
+        $q->delete();
+
+        // Recompute positions to keep them contiguous
+        $remaining = $topic->questions()->orderBy('position')->orderBy('id')->get();
+        foreach ($remaining as $i => $row) {
+            if ($row->position !== $i) {
+                $row->position = $i;
+                $row->save();
+            }
+        }
     }
 
     /**
-     * Load override JSON from storage if exists.
-     *
-     * @return array<int, mixed>|null
+     * Ensure topics table contains topics from config.
      */
-    protected function loadOverride(string $key): ?array
+    protected function bootstrapTopics(): void
     {
-        $disk = Storage::disk('local');
-        $path = $this->topicPath($key);
-        if (! $disk->exists($path)) {
-            return null;
+        $configured = config('exams.topics', []);
+        if (empty($configured)) {
+            return;
         }
-        $content = $disk->get($path);
-        $decoded = json_decode($content, true);
-
-        return is_array($decoded) ? $decoded : null;
+        $existing = Topic::query()->pluck('key')->all();
+        foreach ($configured as $key => $data) {
+            if (! in_array($key, $existing, true)) {
+                Topic::query()->create([
+                    'key' => (string) $key,
+                    'name' => (string) ($data['name'] ?? ucfirst((string) $key)),
+                ]);
+            }
+        }
     }
 
-    protected function topicPath(string $key): string
+    protected function bootstrapQuestionsFromConfig(Topic $topic): void
     {
-        return 'exams/'.$key.'.json';
+        $configured = Arr::get(config('exams.topics', []), $topic->key.'.questions', []);
+        if (! is_array($configured)) {
+            return;
+        }
+        foreach (array_values($configured) as $i => $q) {
+            $this->createQuestion($topic, [
+                'title' => (string) Arr::get($q, 'title', ''),
+                'description' => (string) Arr::get($q, 'description', ''),
+                'choices' => array_values((array) Arr::get($q, 'choices', ['', '', '', ''])),
+                'answer' => (int) Arr::get($q, 'answer', 0),
+            ], $i);
+        }
+    }
+
+    /**
+     * @param  array{title:string,description:string,choices:array<int,string>,answer:int}  $q
+     */
+    protected function createQuestion(Topic $topic, array $q, int $position): Question
+    {
+        return $topic->questions()->create([
+            'title' => $q['title'],
+            'description' => $q['description'],
+            'choice_0' => $q['choices'][0] ?? '',
+            'choice_1' => $q['choices'][1] ?? '',
+            'choice_2' => $q['choices'][2] ?? '',
+            'choice_3' => $q['choices'][3] ?? '',
+            'answer' => (int) $q['answer'],
+            'position' => $position,
+        ]);
     }
 }
